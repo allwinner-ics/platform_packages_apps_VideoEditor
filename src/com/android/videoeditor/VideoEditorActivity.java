@@ -144,6 +144,12 @@ public class VideoEditorActivity extends VideoEditorBaseActivity
     private PreviewSurfaceView mSurfaceView;
     private SurfaceHolder mSurfaceHolder;
     private boolean mHaveSurface;
+
+    // The width and height of the preview surface. They are defined only if
+    // mHaveSurface is true. If the values are still unknown (before
+    // surfaceChanged() is called), mSurfaceWidth is set to -1.
+    private int mSurfaceWidth, mSurfaceHeight;
+
     private boolean mResumed;
     private ImageView mOverlayView;
     private PreviewThread mPreviewThread;
@@ -463,6 +469,9 @@ public class VideoEditorActivity extends VideoEditorBaseActivity
         // surface, and (2) we are resumed.
         if (mHaveSurface && mResumed && mPreviewThread == null) {
             mPreviewThread = new PreviewThread(mSurfaceHolder);
+            if (mSurfaceWidth != -1) {
+                mPreviewThread.onSurfaceChanged(mSurfaceWidth, mSurfaceHeight);
+            }
             restartPreview();
         }
     }
@@ -1170,12 +1179,16 @@ public class VideoEditorActivity extends VideoEditorBaseActivity
         logd("surfaceCreated");
 
         mHaveSurface = true;
+        mSurfaceWidth = -1;
         createPreviewThreadIfNeeded();
     }
 
     @Override
     public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
         logd("surfaceChanged: " + width + "x" + height);
+
+        mSurfaceWidth = width;
+        mSurfaceHeight = height;
 
         if (mPreviewThread != null) {
             mPreviewThread.onSurfaceChanged(width, height);
@@ -1572,7 +1585,7 @@ public class VideoEditorActivity extends VideoEditorBaseActivity
     }
 
     /**
-     * Restart preview
+     * Restarts preview.
      */
     private void restartPreview() {
         if (mRestartPreview == false) {
@@ -1824,7 +1837,7 @@ public class VideoEditorActivity extends VideoEditorBaseActivity
         }
 
         /**
-         * Start the preview playback
+         * Starts the preview playback.
          *
          * @param project The video editor project
          * @param fromMs Start playing from the specified position
@@ -1885,6 +1898,22 @@ public class VideoEditorActivity extends VideoEditorBaseActivity
                                     }
                                 });
                             }
+
+                            public void onError(VideoEditor videoEditor, int error) {
+                                Log.w(TAG, "PreviewProgressListener onError:" + error);
+
+                                // Notify the user that some error happened.
+                                mMainHandler.post(new Runnable() {
+                                    @Override
+                                    public void run() {
+                                        String msg = getString(R.string.editor_preview_error);
+                                        Toast.makeText(VideoEditorActivity.this, msg,
+                                                Toast.LENGTH_LONG).show();
+                                    }
+                                });
+
+                                onStop(videoEditor);
+                            }
                         });
 
                         mMainHandler.post(new Runnable() {
@@ -1922,9 +1951,8 @@ public class VideoEditorActivity extends VideoEditorBaseActivity
          * @param project The project
          */
         private void previewStarted(VideoEditorProject project) {
-            // Change the button image back to a play icon
+            // Change the button image back to a pause icon
             mPreviewPlayButton.setImageResource(R.drawable.btn_playback_ic_pause);
-            mPreviewPlayButton.setBackgroundResource(R.drawable.background_selector);
 
             mTimelineScroller.enableUserScrolling(false);
             mMediaLayout.setPlaybackInProgress(true);
@@ -2034,7 +2062,6 @@ public class VideoEditorActivity extends VideoEditorBaseActivity
 
             // Change the button image back to a play icon
             mPreviewPlayButton.setImageResource(R.drawable.btn_playback_ic_play);
-            mPreviewPlayButton.setBackgroundResource(R.drawable.background_selector);
 
             if (error == false) {
                 // Set the playhead position at the position where the playback stopped
